@@ -64,39 +64,6 @@ are discarded \(that is, the body is an implicit PROGN)."
                  bindings)
          ,@body))
 
-#+:lispworks
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (setf (macro-function 'with-rebinding)
-          (macro-function 'lw:rebinding)))
-
-#-:lispworks
-(defmacro with-rebinding (bindings &body body)
-  "WITH-REBINDING ( { var | (var prefix) }* ) form*
-
-Evaluates a series of forms in the lexical environment that is
-formed by adding the binding of each VAR to a fresh, uninterned
-symbol, and the binding of that fresh, uninterned symbol to VAR's
-original value, i.e., its value in the current lexical environment.
-
-The uninterned symbol is created as if by a call to GENSYM with the
-string denoted by PREFIX - or, if PREFIX is not supplied, the string
-denoted by VAR - as argument.
-
-The forms are evaluated in order, and the values of all but the last
-are discarded \(that is, the body is an implicit PROGN)."
-  ;; reference implementation posted to comp.lang.lisp as
-  ;; <cy3wv0fya0p.fsf@ljosa.com> by Vebjorn Ljosa - see also
-  ;; <http://www.cliki.net/Common%20Lisp%20Utilities>
-  (loop for binding in bindings
-        for var = (if (consp binding) (car binding) binding)
-        for name = (gensym)
-        collect `(,name ,var) into renames
-        collect ``(,,var ,,name) into temps
-        finally (return `(let ,renames
-                          (with-unique-names ,bindings
-                            `(let (,,@temps)
-                              ,,@body))))))
-
 ;; TODO...
 #+(or)
 (defun apply-to-tree (function test tree)
