@@ -49,7 +49,21 @@ XHTML and :HTML5 for HTML5 (HTML syntax)."
     ((:html5)
      (setf *html-mode* :html5
            *empty-tag-end* ">"
-           *prologue* "<!DOCTYPE html>"))))
+           *prologue* "<!DOCTYPE html>"))
+
+    ;; http://dev.w3.org/html5/html4-differences/#syntax
+    ;;
+    ;; XHTML5 must be served with MIME type 'aplication/xhtml-html' and elements
+    ;; need to be put in the 'http://www.w3.org/1999/xhtml' namespace:
+    ;;
+    ;; <html xmlns='http://www.w3.org/1999/xhtml'>
+    ;;  ...
+    ;; </html>
+    ((:xhtml5)
+     (setf *html-mode* :xhtml5
+           *empty-tag-end* " />"
+           *prologue* "<?xml version='1.0' encoding='UTF-8'?>"))
+    ))
 
 (defun process-tag (sexp body-fn)
   (declare (optimize speed space))
@@ -292,17 +306,12 @@ supplied."
          ,@(apply 'tree-to-commands forms var rest)))))
 
 (defmacro with-html-output-to-string ((var &optional string-form
-                                           &key (element-type #-:lispworks ''character
-                                                              #+:lispworks ''lw:simple-char)
-                                                prologue
-                                                indent)
+                                           &key prologue indent)
                                       &body body)
   "Transform the enclosed BODY consisting of HTML as s-expressions
 into Lisp code which creates the corresponding HTML as a string."
   (multiple-value-bind (declarations forms) (extract-declarations body)
-  `(with-output-to-string (,var ,string-form
-                                #-(or :ecl :cmu :sbcl) :element-type
-                                #-(or :ecl :cmu :sbcl) ,element-type)
+  `(with-output-to-string (,var ,string-form)
      ,@declarations
     (with-html-output (,var nil :prologue ,prologue :indent ,indent)
       ,@forms))))
