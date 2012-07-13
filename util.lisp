@@ -87,22 +87,6 @@ only leaves) which pass TEST."
                :displaced-to +spaces+
                :displaced-index-offset 0))
 
-(declaim (inline escape-char))
-(defun escape-char (char &key (test *escape-char-p*))
-  (declare (optimize speed))
-  "Returns an escaped version of the character CHAR if CHAR satisfies
-the predicate TEST.  Always returns a string."
-  (if (funcall test char)
-    (case char
-      (#\< "&lt;")
-      (#\> "&gt;")
-      (#\& "&amp;")
-      (#\' "&#039;")
-      (#\" "&quot;")
-      (t (format nil (if (eq *html-mode* :xml) "&#x~x;" "&#~d;")
-                 (char-code char))))
-    (make-string 1 :initial-element char)))
-
 (defun escape-string (string &key (test *escape-char-p*))
   (declare (optimize speed))
   "Escape all characters in STRING which pass TEST. This function is
@@ -139,61 +123,6 @@ for STRING which'll just be returned."
               while (< (1+ pos) len)
               finally (unless pos
                         (write-sequence string s :start old-pos)))))))
-
-(defun minimal-escape-char-p (char)
-  "Helper function for the ESCAPE-FOO-MINIMAL functions to determine
-whether CHAR must be escaped."
-  (find char "<>&"))
-
-(defun escape-char-minimal (char)
-  "Escapes only #\<, #\>, and #\& characters."
-  (escape-char char :test #'minimal-escape-char-p))
-
-(defun escape-string-minimal (string)
-  "Escapes only #\<, #\>, and #\& in STRING."
-  (escape-string string :test #'minimal-escape-char-p))
-
-(defun minimal-plus-quotes-escape-char-p (char)
-  "Helper function for the ESCAPE-FOO-MINIMAL-PLUS-QUOTES functions to
-determine whether CHAR must be escaped."
-  (find char "<>&'\""))
-
-(defun escape-char-minimal-plus-quotes (char)
-  "Like ESCAPE-CHAR-MINIMAL but also escapes quotes."
-  (escape-char char :test #'minimal-plus-quotes-escape-char-p))
-
-(defun escape-string-minimal-plus-quotes (string)
-  "Like ESCAPE-STRING-MINIMAL but also escapes quotes."
-  (escape-string string :test #'minimal-plus-quotes-escape-char-p))
-
-(defun iso-8859-1-escape-char-p (char)
-  "Helper function for the ESCAPE-FOO-ISO-8859-1 functions to
-determine whether CHAR must be escaped."
-  (or (find char "<>&'\"")
-      (> (char-code char) 255)))
-
-(defun escape-char-iso-8859-1 (char)
-  "Escapes characters that aren't defined in ISO-8859-9."
-  (escape-char char :test #'iso-8859-1-escape-char-p))
-
-(defun escape-string-iso-8859-1 (string)
-  "Escapes all characters in STRING which aren't defined in ISO-8859-1."
-  (escape-string string :test #'iso-8859-1-escape-char-p))
-
-(defun non-7bit-ascii-escape-char-p (char)
-  "Helper function for the ESCAPE-FOO-ISO-8859-1 functions to
-determine whether CHAR must be escaped."
-  (or (find char "<>&'\"")
-      (> (char-code char) 127)))
-
-(defun escape-char-all (char)
-  "Escapes characters which aren't in the 7-bit ASCII character set."
-  (escape-char char :test #'non-7bit-ascii-escape-char-p))
-
-(defun escape-string-all (string)
-  "Escapes all characters in STRING which aren't in the 7-bit ASCII
-character set."
-  (escape-string string :test #'non-7bit-ascii-escape-char-p))
 
 (defun extract-declarations (forms)
   "Given a FORM, the declarations - if any - will be extracted

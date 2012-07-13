@@ -45,21 +45,23 @@
            :convert-attributes
            :convert-tag-to-string-list
            :esc
-           :escape-char
-           :escape-char-all
-           :escape-char-iso-8859-1
-           :escape-char-minimal
-           :escape-char-minimal-plus-quotes
            :escape-string
-           :escape-string-all
-           :escape-string-iso-8859-1
-           :escape-string-minimal
-           :escape-string-minimal-plus-quotes
            :fmt
            :htm
            :html-mode
            :str
            :with-html-output
-           :with-html-output-to-string))
+           :with-html-output-to-string
+           ;; convenience functions (not required when compiling)
+           :escape-char
+           :escape-char-all
+           :escape-char-iso-8859-1
+           :escape-char-minimal
+           :escape-char-minimal-plus-quotes
+           :escape-string-all
+           :escape-string-iso-8859-1
+           :escape-string-minimal
+           :escape-string-minimal-plus-quotes
+           ))
 
 (pushnew :cl-who *features*)
