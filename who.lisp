@@ -53,7 +53,7 @@ XHTML and :HTML5 for HTML5 (HTML syntax)."
 
     ;; http://dev.w3.org/html5/html4-differences/#syntax
     ;;
-    ;; XHTML5 must be served with MIME type 'aplication/xhtml-html' and elements
+    ;; XHTML5 must be served with MIME type 'application/xhtml+xml' and elements
     ;; need to be put in the 'http://www.w3.org/1999/xhtml' namespace:
     ;;
     ;; <html xmlns='http://www.w3.org/1999/xhtml'>
