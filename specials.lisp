@@ -35,23 +35,50 @@
   `(cl:defconstant ,name (if (boundp ',name) (symbol-value ',name) ,value)
      ,@(when doc (list doc))))
 
-(defvar *prologue*
-  "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">"
-  "This is the first line that'll be printed if the :PROLOGUE keyword
-argument is T")
+;;; http://www.w3.org/QA/2002/04/valid-dtd-list.html
+;;
+;; Some SGML prologues
+(defconstant        html4-strict "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">")
+(defconstant  html4-transitional "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">")
+(defconstant      html4-frameset "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\" \"http://www.w3.org/TR/html4/frameset.dtd\">")
+(defconstant               htnl5 "<!DOCTYPE HTML>")
+(defvar *sgml-prologues*
+  '(html4-strict html4-transitional html4-frameset htnl5))
+;;
+;; Some XML prologues
+(defconstant                xml1 "<?xml version='1.0' encoding='UTF-8'?>")
+(defconstant       xhtml1-strict "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">")
+(defconstant xhtml1-transitional "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">")
+(defconstant     xhtml1-frameset "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Frameset//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd\">")
+(defconstant              xhtml5 "<?xml version='1.0' encoding='UTF-8'?>")
+(defvar *xml-prologues*
+  '(xml1 xhtml1-strict xhtml1-transitional xhtml1-frameset xhtml5))
+;;
+;; http://dev.w3.org/html5/html4-differences/#syntax
+;;
+;; XHTML5 must be served with MIME type 'application/xhtml+xml' and the html
+;; element must include the following namespace declaration:
+;;
+;;  <html xmlns='http://www.w3.org/1999/xhtml'>
+;;   ...
+;;  </html>
 
-(defvar *escape-char-p*
-  (lambda (char)
-    (or (find char "<>&'\"")
-        (> (char-code char) 127)))
-  "Used by ESCAPE-STRING to test whether a character should be escaped.")
+(defvar *known-prologues* (append *sgml-prologues* *xml-prologues*))
+
+(defvar *prologue* 'xhtml1-strict
+  "The default prologue, i.e., the first line printed by
+WITH-HTML-OUTPUT[-TO-STRING] when the :PROLOGUE keyword argument is T.
+
+Default value:  XHTML1-STRICT
+
+The convenience function (SETF (PROLOGUE) ...) checks the new value against
+*KNOWN-PROLOGUES* before binding this variable.  If a variety of document types
+are required, supplying a :PROLOGUE keyword argument is your only option, i.e.,
+lexically binding this variable will not have the desired effect.")
 
 (defvar *indent* nil
   "Whether to insert line breaks and indent. Also controls amount of
 indentation dynamically.")
-
-(defvar *html-mode* :xml
-  ":SGML for \(SGML-)HTML, :XML \(default) for XHTML, :HTML5 for HTML5.")
 
 (defvar *downcase-tokens-p* t
   "If NIL, a keyword symbol representing a tag or attribute name will
@@ -61,15 +88,12 @@ needs to output case sensitive XML.")
 (defvar *attribute-quote-char* #\'
   "Quote character for attributes.")
 
-(defvar *empty-tag-end* " />"
-  "End of an empty tag.  Default is XML style.")
-
 (defvar *html-no-indent-tags*
   '(:pre :textarea)
   "The list of HTML tags that should disable indentation inside them. The initial
 value is a list containing only :PRE and :TEXTAREA.")
 
-(defvar *html-empty-tags*
+(defvar *pre-html5-void-elements*
   '(:area
     :atop
     :audioscope
@@ -103,20 +127,30 @@ value is a list containing only :PRE and :TEXTAREA.")
     :track
     :wbr)
   "The list of HTML tags that should be output as empty tags.
-See *HTML-EMPTY-TAG-AWARE-P*.")
+See *HTML-VOID-ELEMENTS-AWARE-P*.")
 
-(defvar *html-empty-tag-aware-p* t
-  "Set this to NIL to if you want to use CL-WHO as a strict XML
-generator.  Otherwise, CL-WHO will only write empty tags listed
-in *HTML-EMPTY-TAGS* as <tag/> \(XHTML mode) or <tag> \(SGML
-mode and HTML5 mode).  For all other tags, it will always generate
-<tag></tag>.")
+(defvar *html-void-elements-aware-p* t
+  "Set this to a non-NIL value if you want the empty tags listed in
+*PRE-HTML5-VOID-ELEMENTS* to be written \"<tag>\" \(SGML syntax) or
+\"<tag \>\" \(XML syntax).  \(All other tags are written \"<tag></tag>\").
+This is the default.
 
-(defconstant +newline+ (make-string 1 :initial-element #\Newline)
+Set this to NIL if you want all tags to be written \"<tag></tag>\" regardless as
+to whether or not they are listed in *PRE-HTML5-VOID-ELEMENTS*.  This is useful
+if you want CL-WHO to behave as a strict XML generator.")
+
+(defconstant +newline+
+  (make-string 1 :initial-element #\Newline)
   "Used for indentation.")
 
-(defconstant +spaces+ (make-string 2000
-                                   :initial-element #\Space
-                                   :element-type 'base-char)
+(defconstant +spaces+
+  (make-string 2000 :initial-element #\Space :element-type 'base-char)
   "Used for indentation.")
 
+;;; define these as special variables in order to make it easy to change the
+;;; behaviour of ESCAPE-STRING (and the functions in convenience.lisp)
+(defvar *escape-char-test* 'escape-char-p
+  "Used by ESCAPE-STRING to test whether a character should be escaped.")
+
+(defvar *escape-char-function* 'escape-char
+  "Used by ESCAPE-STRING to perform the actual escaping.")
