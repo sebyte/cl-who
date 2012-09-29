@@ -27,49 +27,110 @@
 ;;; NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 ;;; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+;; with-html-output
+;;  tree-to-commands
+;;   tree-to-template
+;;    process-tag
+;;     convert-tag-to-string-list
+;;      convert-attributes
+
 (in-package :cl-who)
 
-(defun html-mode ()
-  "Returns the current HTML mode. :SGML for \(SGML-)HTML, :XML for
-XHTML and :HTML5 for HTML5 (HTML syntax)."
-  *html-mode*)
-
-(defun (setf html-mode) (mode)
-  "Sets the output mode to XHTML or \(SGML-)HTML.  MODE can be
-:SGML for HTML, :XML for XHTML or :HTML5 for HTML5 (HTML syntax)."
-  (ecase mode
-    ((:sgml)
-     (setf *html-mode* :sgml
-           *empty-tag-end* ">"
-           *prologue* "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">"))
-    ((:xml)
-     (setf *html-mode* :xml
-           *empty-tag-end* " />"
-           *prologue* "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">"))
-    ((:html5)
-     (setf *html-mode* :html5
-           *empty-tag-end* ">"
-           *prologue* "<!DOCTYPE html>"))
-
-    ;; http://dev.w3.org/html5/html4-differences/#syntax
-    ;;
-    ;; XHTML5 must be served with MIME type 'application/xhtml+xml' and elements
-    ;; need to be put in the 'http://www.w3.org/1999/xhtml' namespace:
-    ;;
-    ;; <html xmlns='http://www.w3.org/1999/xhtml'>
-    ;;  ...
-    ;; </html>
-    ((:xhtml5)
-     (setf *html-mode* :xhtml5
-           *empty-tag-end* " />"
-           *prologue* "<?xml version='1.0' encoding='UTF-8'?>"))
-    ))
-
-(defun process-tag (sexp body-fn)
+(defun convert-attributes (attr-list syntax)
+  "Helper function for CONVERT-TAG-TO-STRING-LIST which converts the
+alist ATTR-LIST of attributes into a list of strings and/or Lisp
+forms."
   (declare (optimize speed space))
-  "Returns a string list corresponding to the `HTML' \(in CL-WHO
-syntax) in SEXP.  Uses the generic function CONVERT-TO-STRING-LIST
-internally.  Utility function used by TREE-TO-TEMPLATE."
+  (loop with =var= = (gensym)
+        for (orig-attr . val) in attr-list
+        for attr = (if *downcase-tokens-p*
+                     (string-downcase orig-attr)
+                     (string orig-attr))
+        unless (null val) ;; no attribute at all if VAL is NIL
+          if (constantp val)
+            if (and (eq syntax :sgml)
+                    (eq val t)) ; special case for SGML
+              nconc (list " " attr)
+            else
+              nconc (list " "
+                          ;; name of attribute
+                          attr
+                          (format nil "=~C" *attribute-quote-char*)
+                          ;; value of attribute
+                          (cond ((eq val t)
+                                 ;; VAL is T, use attribute's name
+                                 attr)
+                                (t
+                                 ;; constant form, PRINC it -
+                                 ;; EVAL is OK here because of CONSTANTP
+                                 (format nil "~A" (eval val))))
+                          (string *attribute-quote-char*))
+            end
+          else
+            ;; do the same things as above but at runtime
+            nconc (list `(let ((,=var= ,val))
+                          (cond ((null ,=var=))
+                                ((eq ,=var= t)
+                                 ,(case syntax
+                                    (:sgml
+                                     `(fmt " ~A" attr))
+                                    ;; otherwise default to :xml mode
+                                    (t
+                                     `(fmt " ~A=~C~A~C"
+                                           ,attr
+                                           *attribute-quote-char*
+                                           ,attr
+                                           *attribute-quote-char*))))
+                                (t
+                                 (fmt " ~A=~C~A~C"
+                                      ,attr
+                                      *attribute-quote-char*
+                                      ,=var=
+                                      *attribute-quote-char*)))))))
+
+(defun convert-tag-to-string-list (tag attr-list body body-fn syntax)
+  "Used by PROCESS-TAG to produce a list of strings or lisp forms.  TAG is a
+keyword symbol naming the outer tag, ATTR-LIST is an alist of its attributes
+\(the car is the attribute's name as a keyword, the cdr is its value), BODY is
+the tag's body, and BODY-FN is a function which should be applied to
+BODY.  SYNTAX is required by CONVERT-ATTRIBUTES and EMPTY-TAG-END."
+  (declare (optimize speed space))
+  (let ((tag (if *downcase-tokens-p* (string-downcase tag) (string tag)))
+        (body-indent
+          ;; increase *INDENT* by 2 for body -- or disable it
+          (when (and *indent* (not (member tag *html-no-indent-tags* :test #'string-equal)))
+            (+ 2 *indent*))))
+    (nconc
+     (if *indent*
+       ;; indent by *INDENT* spaces
+       (list +newline+ (n-spaces *indent*)))
+     ;; tag name
+     (list "<" tag)
+     ;; attributes
+     (convert-attributes attr-list syntax)
+     ;; body
+     (if body
+       (append
+        (list ">")
+        ;; now hand over the tag's body to TREE-TO-TEMPLATE
+        (let ((*indent* body-indent))
+          (funcall body-fn body syntax))
+        (when body-indent
+          ;; indentation
+          (list +newline+ (n-spaces *indent*)))
+        ;; closing tag
+        (list "</" tag ">"))
+       ;; no body, so no closing tag unless defined in *HTML-EMPTY-TAGS*
+       (if (or (not *html-void-elements-aware-p*)
+               (member tag *pre-html5-void-elements* :test #'string-equal))
+           (list (void-element-end syntax))
+         (list ">" "</" tag ">"))))))
+
+(defun process-tag (sexp body-fn syntax)
+  (declare (optimize speed space))
+  "Returns a string list corresponding to the `HTML' \(in CL-WHO syntax) in
+SEXP.  Uses the generic function CONVERT-TO-STRING-LIST internally.  Utility
+function used by TREE-TO-TEMPLATE."
   (let (tag attr-list body)
     (cond
       ((keywordp sexp)
@@ -93,105 +154,11 @@ internally.  Utility function used by TREE-TO-TEMPLATE."
                collect (cons (first rest) (second rest)) into attr
              finally (setq attr-list attr))
        (setq body (cdr sexp))))
-    (convert-tag-to-string-list tag attr-list body body-fn)))
+    (convert-tag-to-string-list tag attr-list body body-fn syntax)))
 
-(defun convert-attributes (attr-list)
-  "Helper function for CONVERT-TAG-TO-STRING-LIST which converts the
-alist ATTR-LIST of attributes into a list of strings and/or Lisp
-forms."
-  (declare (optimize speed space))
-  (loop with =var= = (gensym)
-        for (orig-attr . val) in attr-list
-        for attr = (if *downcase-tokens-p*
-                     (string-downcase orig-attr)
-                     (string orig-attr))
-        unless (null val) ;; no attribute at all if VAL is NIL
-          if (constantp val)
-            if (and (eq *html-mode* :sgml) (eq val t)) ; special case for SGML
-              nconc (list " " attr)
-            else
-              nconc (list " "
-                          ;; name of attribute
-                          attr
-                          (format nil "=~C" *attribute-quote-char*)
-                          ;; value of attribute
-                          (cond ((eq val t)
-                                 ;; VAL is T, use attribute's name
-                                 attr)
-                                (t
-                                 ;; constant form, PRINC it -
-                                 ;; EVAL is OK here because of CONSTANTP
-                                 (format nil "~A" (eval val))))
-                          (string *attribute-quote-char*))
-            end
-          else
-            ;; do the same things as above but at runtime
-            nconc (list `(let ((,=var= ,val))
-                          (cond ((null ,=var=))
-                                ((eq ,=var= t)
-                                 ,(case *html-mode*
-                                    (:sgml
-                                     `(fmt " ~A" attr))
-                                    ;; otherwise default to :xml mode
-                                    (t
-                                     `(fmt " ~A=~C~A~C"
-                                           ,attr
-                                           *attribute-quote-char*
-                                           ,attr
-                                           *attribute-quote-char*))))
-                                (t
-                                 (fmt " ~A=~C~A~C"
-                                      ,attr
-                                      *attribute-quote-char*
-                                      ,=var=
-                                      *attribute-quote-char*)))))))
-
-(defgeneric convert-tag-to-string-list (tag attr-list body body-fn)
-  (:documentation "Used by PROCESS-TAG to convert `HTML' into a list
-of strings.  TAG is a keyword symbol naming the outer tag, ATTR-LIST
-is an alist of its attributes \(the car is the attribute's name as a
-keyword, the cdr is its value), BODY is the tag's body, and BODY-FN is
-a function which should be applied to BODY.  The function must return
-a list of strings or Lisp forms."))
-
-(defmethod convert-tag-to-string-list (tag attr-list body body-fn)
-  "The standard method which is not specialized.  The idea is that you
-can use EQL specializers on the first argument."
-  (declare (optimize speed space))
-  (let ((tag (if *downcase-tokens-p* (string-downcase tag) (string tag)))
-        (body-indent
-          ;; increase *INDENT* by 2 for body -- or disable it
-          (when (and *indent* (not (member tag *html-no-indent-tags* :test #'string-equal)))
-            (+ 2 *indent*))))
-    (nconc
-     (if *indent*
-       ;; indent by *INDENT* spaces
-       (list +newline+ (n-spaces *indent*)))
-     ;; tag name
-     (list "<" tag)
-     ;; attributes
-     (convert-attributes attr-list)
-     ;; body
-     (if body
-       (append
-        (list ">")
-        ;; now hand over the tag's body to TREE-TO-TEMPLATE
-        (let ((*indent* body-indent))
-          (funcall body-fn body))
-        (when body-indent
-          ;; indentation
-          (list +newline+ (n-spaces *indent*)))
-        ;; closing tag
-        (list "</" tag ">"))
-       ;; no body, so no closing tag unless defined in *HTML-EMPTY-TAGS*
-       (if (or (not *html-empty-tag-aware-p*)
-               (member tag *html-empty-tags* :test #'string-equal))
-         (list *empty-tag-end*)
-         (list ">" "</" tag ">"))))))
-
-(defun tree-to-template (tree)
-  "Transforms an HTML tree into an intermediate format - mainly a
-flattened list of strings. Utility function used by TREE-TO-COMMANDS-AUX."
+(defun tree-to-template (tree syntax)
+  "Transforms an HTML tree into an intermediate format - mainly a flattened list
+of strings."
   (loop for element in tree
         if (or (keywordp element)
                  (and (listp element)
@@ -200,7 +167,7 @@ flattened list of strings. Utility function used by TREE-TO-COMMANDS-AUX."
                       (listp (first element))
                       (keywordp (first (first element)))))
         ;; the syntax for a tag - process it
-        nconc (process-tag element #'tree-to-template)
+        nconc (process-tag element #'tree-to-template syntax)
         ;; list - insert as sexp
         else if (consp element)
         collect `(let ((*indent* ,*indent*)) ,element)
@@ -226,23 +193,20 @@ flattened list of strings. Utility function used by TREE-TO-COMMANDS-AUX."
       result-string)))
 
 (defun conc (&rest string-list)
-  "Concatenates all arguments which should be string into one string."
+  "Concatenates all arguments (which should be strings) into one string."
   (funcall #'string-list-to-string string-list))
 
 (defun tree-to-commands (tree stream &key prologue ((:indent *indent*) *indent*))
   (declare (optimize speed space))
-  (when (and *indent*
-             (not (integerp *indent*)))
+  (when (and *indent* (not (integerp *indent*)))
     (setq *indent* 0))
   (let ((in-string-p t)
         collector
         string-collector
-        (template (tree-to-template tree)))
+        (template (tree-to-template tree (syntax prologue))))
     (when prologue
       (push +newline+ template)
-      (when (eq prologue t)
-        (setq prologue *prologue*))
-      (push prologue template))
+      (push (prologue-string prologue) template))
     (flet ((emit-string-collector ()
              "Generate a WRITE-STRING statement for what is currently
 in STRING-COLLECTOR."
@@ -288,21 +252,25 @@ which should either hold a stream or which'll be bound to STREAM if
 supplied."
   (declare (ignore prologue))
   (multiple-value-bind (declarations forms) (extract-declarations body)
-  `(let ((,var ,(or stream var)))
+    `(let ((,var ,(or stream var)))
        ,@declarations
-     (macrolet ((htm (&body body)
-                  `(with-html-output (,',var nil :prologue nil :indent ,,indent)
-                     ,@body))
-                (fmt (&rest args)
-                  `(format ,',var ,@args))
-                (esc (thing)
-                  (with-unique-names (result)
-                    `(let ((,result ,thing))
-                       (when ,result (write-string (escape-string ,result) ,',var)))))
-                (str (thing)
-                  (with-unique-names (result)
-                    `(let ((,result ,thing))
-                       (when ,result (princ ,result ,',var))))))
+       (macrolet ((htm (&body body)
+                    `(with-html-output (,',var nil :prologue nil :indent ,,indent)
+                       ,@body))
+                  (fmt (&rest args)
+                    `(format ,',var ,@args))
+                  (esc (thing)
+                    (with-unique-names (result)
+                      `(let ((,result ,thing))
+                         (when ,result
+                           (let ((prologue (cadr (member :prologue ',',rest))))
+                             (write-string
+                              (escape-string ,result (syntax prologue))
+                              ,',var))))))
+                  (str (thing)
+                    (with-unique-names (result)
+                      `(let ((,result ,thing))
+                         (when ,result (princ ,result ,',var))))))
          ,@(apply 'tree-to-commands forms var rest)))))
 
 (defmacro with-html-output-to-string ((var &optional string-form
