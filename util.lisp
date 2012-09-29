@@ -64,8 +64,18 @@ are discarded \(that is, the body is an implicit PROGN)."
                  bindings)
          ,@body))
 
-;; TODO...
-#+(or)
+(defun extract-declarations (forms)
+  "Given a FORM, the declarations - if any - will be extracted
+   from the head of the FORM, and will return two values the declarations,
+   and the remaining of FORM"
+  (loop with declarations
+        for forms on forms
+        for form = (first forms)
+        while (and (not (atom form)) ; my fix
+                   (eql (first form) 'cl:declare))
+        do (push form declarations)
+        finally (return (values (nreverse declarations) forms))))
+
 (defun apply-to-tree (function test tree)
   (declare (optimize speed space))
   (declare (type function function test))
@@ -73,7 +83,7 @@ are discarded \(that is, the body is an implicit PROGN)."
 only leaves) which pass TEST."
   (cond
     ((funcall test tree)
-      (funcall function tree))
+     (funcall function tree))
     ((consp tree)
       (cons
        (apply-to-tree function test (car tree))
@@ -87,16 +97,66 @@ only leaves) which pass TEST."
                :displaced-to +spaces+
                :displaced-index-offset 0))
 
-(defun escape-string (string &key (test *escape-char-p*))
+;;; prologue & syntax
+(defun prologue () "Return the current prologue." *prologue*)
+
+(defun (setf prologue) (prologue)
+  "Set the cuurent prologue.  Raise an error if PROLOGUE is not included in
+*KNOWN-PROLOGUES*."
+  (if (not (member prologue *known-prologues*))
+      (error "Unknown prologue: ~a" prologue)
+    (setf *prologue* prologue)))
+
+(defun prologue-string (prologue)
+  (when (eq prologue t) (setq prologue *prologue*))
+  (if (not (member prologue *known-prologues*))
+      (error "Unknown prologue: ~a" prologue)
+    (eval prologue)))
+
+(defun syntax (prologue)
+  "Return the appropriate syntax for the given PROLOGUE."
+  (when (or (eq prologue t) (not prologue))
+    (setq prologue *prologue*))
+  (cond ((member prologue *sgml-prologues*) :sgml)
+        ((member prologue *xml-prologues*) :xml)
+        (t (error "Unknown prologue ~a" prologue))))
+
+(defun void-element-end (syntax)
+  "Return the appropriate void element ending for the given SYNTAX."
+  (cond ((eq syntax :sgml) ">")
+        ((eq syntax :xml) " />")
+        (t (error "Unknown syntax ~a" syntax))))
+
+;;; escaping
+(defun escape-char-p (char)
+  (or (find char "<>&'\"")
+      (> (char-code char) 127)))
+
+(declaim (inline escape-char))
+(defun escape-char (char syntax &key (test *escape-char-test*))
+    (declare (optimize speed))
+    (if (funcall test char)
+        (case char
+          (#\< "&lt;")
+          (#\> "&gt;")
+          (#\& "&amp;")
+          (#\' (if (eq syntax :xml) "&apos;" "&#039;"))
+          (#\" "&quot;")
+          (t (format nil (if (eq syntax :xml) "&#x~x;" "&#~d;")
+                     (char-code char))))
+        (make-string 1 :initial-element char)))
+
+(defun escape-string (string syntax
+                      &key
+                      (test *escape-char-test*)
+                      (delegate *escape-char-function*))
   (declare (optimize speed))
-  "Escape all characters in STRING which pass TEST. This function is
-not guaranteed to return a fresh string.  Note that you can pass NIL
-for STRING which'll just be returned."
-  (let ((first-pos (position-if test string))
-        (format-string (if (eq *html-mode* :xml) "&#x~x;" "&#~d;")))
+  "Escape all characters in STRING which pass TEST.  STRING may be NIL in which
+case NIL is returned."
+  (let ((first-pos (position-if test string)))
     (if (not first-pos)
-      ;; nothing to do, just return STRING
-      string
+        ;; nothing to do, just return STRING
+        string
       (with-output-to-string (s)
         (loop with len = (length string)
               for old-pos = 0 then (1+ pos)
@@ -107,30 +167,7 @@ for STRING which'll just be returned."
               for char = (and pos (char string pos))
               while pos
               do (write-sequence string s :start old-pos :end pos)
-                 (case char
-                   ((#\<)
-                     (write-sequence "&lt;" s))
-                   ((#\>)
-                     (write-sequence "&gt;" s))
-                   ((#\&)
-                     (write-sequence "&amp;" s))
-                   ((#\')
-                     (write-sequence "&#039;" s))
-                   ((#\")
-                     (write-sequence "&quot;" s))
-                   (otherwise
-                     (format s format-string (char-code char))))
+                 (write-sequence (funcall delegate char syntax :test test) s)
               while (< (1+ pos) len)
               finally (unless pos
                         (write-sequence string s :start old-pos)))))))
-
-(defun extract-declarations (forms)
-  "Given a FORM, the declarations - if any - will be extracted
-   from the head of the FORM, and will return two values the declarations,
-   and the remaining of FORM"
-  (loop with declarations
-        for forms on forms
-        for form = (first forms)
-        while (eql (first form) 'cl:declare)
-        do (push form declarations)
-        finally (return (values (nreverse declarations) forms))))
