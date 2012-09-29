@@ -34,8 +34,8 @@
   :components ((:file "packages")
                (:file "specials")
                (:file "util")
-               (:file "who")
-               (:file "convenience")))
+               (:file "who")))
+               ;(:file "convenience")))
 
 (defsystem :cl-who-test
   :depends-on (:cl-who :flexi-streams)
