@@ -35,12 +35,13 @@
   #+:sbcl (:shadow :defconstant)
   #+:sb-package-locks (:lock t)
   (:export :*attribute-quote-char*
-           :*escape-char-p*
-           :*prologue*
            :*downcase-tokens-p*
+           :*escape-char-function*
+           :*escape-char-test
            :*html-no-indent-tags*
-           :*html-empty-tags*
-           :*html-empty-tag-aware-p*
+           :*html-void-elements-aware-p*
+           :*pre-html5-void-elements*
+           :*prologue*
            :conc
            :convert-attributes
            :convert-tag-to-string-list
@@ -48,12 +49,11 @@
            :escape-string
            :fmt
            :htm
-           :html-mode
+           :prologue
            :str
            :with-html-output
            :with-html-output-to-string
-           ;; convenience functions (not required when compiling)
-           :escape-char
+           ;; convenience functions (not really needed)
            :escape-char-all
            :escape-char-iso-8859-1
            :escape-char-minimal
