@@ -119,7 +119,7 @@ tests succeeded."
   (with-open-file (binary-stream file-name :element-type 'flex:octet)
     (let ((stream (flex:make-flexi-stream binary-stream :external-format external-format))
           (*package* (find-package :cl-who-test))
-          (html-mode (html-mode)))
+          (syntax (syntax)))
       (unwind-protect
           (destructuring-bind (*attribute-quote-char*
                                *downcase-tokens-p*
@@ -128,7 +128,7 @@ tests succeeded."
                                *html-empty-tags*
                                *prologue*)
               *initial-settings*
-            (setf (html-mode) :xml)
+            (setf (syntax) :xml)
             (do-tests ((format nil "Simple tests from file ~S" (file-namestring file-name))
                        (not verbose))
               (let ((form (or (read stream nil) (done))))
@@ -144,7 +144,7 @@ tests succeeded."
                                            form expected actual))))))
                       ((eval form) nil)
                       (t (list (format nil "~S returned NIL" form)))))))
-        (setf (html-mode) html-mode)))))
+        (setf (syntax) syntax)))))
 
 (defun run-all-tests (&key verbose)
   "Runs all tests for CL-WHO and returns a true value iff all tests
